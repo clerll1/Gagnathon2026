@@ -82,16 +82,33 @@ Open a terminal in your project root directory and run the following commands:
 
 ## 🚀 Step 2: Running the Application
 
-Once your environment is set up and `app.py` is in place, start the FastAPI server:
+Once your environment is set up and `app.py` is in place, start the FastAPI server (recommended on a Spark Unit for faster results):
 
 ```
-uvicorn app:app --reload
+uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-* The server will run at: `http://127.0.0.1:8000`
+* The server will then run at: `http://127.0.0.1:8000` (from the server)
 * Interactive API Documentation (Swagger UI): `http://127.0.0.1:8000/docs`
 * ReDoc Documentation: `http://127.0.0.1:8000/redoc`
 
+
+## 💻 Step 3: Using the Chatbot
+
+Once the server is up and running, you can access the chatbot at: 
+```
+http://<ip_address_of_the_server>:8000
+```
+This link takes you to a basic HTML page implementing a simple interface for the chatbot. On this interface you can then give prompts to the chatbots and see the answers.
+
+* Please note that so far it only works if your are on the same network of the server.
+* For now we have a limited number of tables from which the API can get data. So the questions our chatbot can answer so far are about those tables :
+   - Fertility 1853-2025
+   - Households: Tenancy status by type of household 2004-2022
+   - Concerts in concert halls 1999-2019
+   - Catch and value by species and fishing areas 1993-2024
+   - Hospital beds 2007-2020
+   - Museum visits by type of museum and region 1995-2023
 
 
 ## 🧪 Example Prompts & Testing
@@ -105,7 +122,7 @@ uvicorn app:app --reload
 
 ## 🛑 `.gitignore`
 
-To ensure local binary files, caches, or virtual environments are not tracked by Git, include a `.gitignore` file with:
+To ensure local binary files, caches, or virtual environments are not tracked by Git, the `.gitignore` file includes:
 
 ```
 venv/
