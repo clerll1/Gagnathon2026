@@ -141,10 +141,10 @@ It opens a simple chat page. Type a question and read the answer.
 
 ## 🧪 Example Prompts & Testing
 
-1. **Museum Visits**: How many museum visits were recorded in 2021?
-2. **Hospital Beds**: How many hospital beds were available in 2020?
-3. **Fish Catch**: What was the total catch of cod in 2022?
-4. **Concerts in Harpa**: How many concerts were held in Harpa in 2017?
+* **Museum Visits**: How many museum visits were recorded in 2021?
+* **Hospital Beds**: How many hospital beds were available in 2020?
+* **Fish Catch**: What was the total catch of cod in 2022?
+* **Concerts in Harpa**: How many concerts were held in Harpa in 2017?
 
 
 
