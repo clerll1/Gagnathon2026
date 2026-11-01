@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field, AliasChoices
 import requests
 import datetime
 import unicodedata
-import math
 import re
 import os
 import threading
@@ -109,8 +108,7 @@ SYNONYMS = {
 # Weight of a word when scoring the tables, written by hand. A word not listed weighs DEFAULT_WEIGHT.
 # HIGH: words that name one topic (a fish species, "museum", "fertility"): they decide the table.
 # LOW: words that many tables can have (regions, "value", "rate", "guests"): they only help to choose
-# between tables, and are not enough to add a second table to the answer.
-# (rarity() below computes weights automatically from the tables; not used for now: USE_RARITY.)
+# between tables, and are not enough on their own to choose a table (see MIN_SCORE).
 HIGH, LOW, DEFAULT_WEIGHT = 2.0, 0.3, 1.0
 WORD_WEIGHTS = {
     **dict.fromkeys([
@@ -152,7 +150,6 @@ WORD_WEIGHTS = {
         "blue", "silver", "spring", "spawning", "rough", "spotted", "starry", "spiny", "lemon", "roe",
     ], LOW),
 }
-USE_RARITY = False  # True: weights computed by rarity() instead of WORD_WEIGHTS
 
 # Icelandic is not supported yet: small Icelandic words (accents stripped by clean_text) that English never uses.
 # Letters alone are not enough: English questions can have Icelandic place names ("Reykjavík", "Ísafjörður").
@@ -189,8 +186,8 @@ YEAR_LIKE = r"(1[789]|20)\d\d([MQK]\d{1,2})?"  # "2024", "2024M03", "2024Q1", "2
 YEAR_IN_QUESTION = r"\b(1[5-9]\d\d|20\d\d)\b"   # years 1500-2099 typed by the user
 NOT_KEYWORDS = {"all", "other", "general"}  # words of keyword_columns values that say nothing about the topic
 KEYWORD_WEIGHT = 3  # a table keyword counts 3 times more than a word found in the table's value labels
-MIN_EXTRA_SCORE = 1.5  # score needed on the words left for a second (third...) table to be added:
-                       # one LOW keyword (3 x 0.3) is not enough, one other keyword (3 x 1 or more) is
+MIN_SCORE = 1.5  # score a table needs to be chosen (the first one, and each extra one on the words left):
+                 # one LOW keyword (3 x 0.3) is not enough, one other keyword (3 x 1 or more) is
 
 
 def words(text):
@@ -281,18 +278,8 @@ def in_table(word, table):
     return any(same_word(word, x) for x in table["_kw"] | table["_vals"])
 
 
-def rarity(word):
-    """Weight of a word by how few tables use it (BM25 idf): "fertility" (1 table of 6) weighs 1.5,
-    "guests" (2 tables) 1.0, a word in every table almost 0. With many tables, common words count for nothing."""
-    n = len(TABLES)
-    df = sum(in_table(word, t) for t in TABLES.values())
-    return math.log((n - df + 0.5) / (df + 0.5) + 1)
-
-
 def word_weight(word):
     """Weight of a word: from WORD_WEIGHTS (the word, or the same word in plural/singular), else DEFAULT_WEIGHT."""
-    if USE_RARITY:
-        return rarity(word)
     if word in WORD_WEIGHTS:
         return WORD_WEIGHTS[word]
     return next((wt for w, wt in WORD_WEIGHTS.items() if same_word(word, w)), DEFAULT_WEIGHT)
@@ -314,26 +301,21 @@ def score_tables(tokens):
     return sorted(scores, key=lambda c: -c["score"])
 
 
-def find_table(question):
-    """Best table for the question, or None; returns (table, scores of all tables, best first)."""
-    scores = score_tables(query_tokens(question))
-    best = scores[0]
-    return (TABLES[best["table_id"]] if best["keyword_hits"] > 0 else None), scores
-
-
 def find_tables(question):
     """Tables for the question, best first, so that one question can ask about several topics
     ("hospital beds in 2020, and museum guests that year"). Returns (tables, scores of all tables).
     Tables are chosen one by one: once a table is chosen, the words it explains (its keywords and value labels)
     are removed, and the next table must score on the words left. So "guests" in "guests visited museums"
-    is explained by the museum table and does not also bring in the concert table."""
+    is explained by the museum table and does not also bring in the concert table.
+    Every table, the first one too, needs MIN_SCORE: a single LOW word is not enough
+    ("the value of the Icelandic króna" is not about the fish catch, "children live in Iceland" not about fertility)."""
     tokens = query_tokens(question)
     scores = score_tables(tokens)
     chosen = []
     while True:
         left = [w for w in tokens if not any(in_table(w, t) for t in chosen)]
         best = next((c for c in score_tables(left) if TABLES[c["table_id"]] not in chosen), None)
-        if not best or best["keyword_hits"] == 0 or (chosen and best["score"] < MIN_EXTRA_SCORE):
+        if not best or best["keyword_hits"] == 0 or best["score"] < MIN_SCORE:
             return chosen, scores
         chosen.append(TABLES[best["table_id"]])
         for c in scores:  # shown in the answer: why each extra table was added
@@ -589,13 +571,13 @@ class QuestionRequest(BaseModel):
     question: str = Field(validation_alias=AliasChoices("question", "prompt"))
 
 
-# "/spyrja_px_api" is the path given in the hackathon spec; "/ask" is the same endpoint.
 # The web interface: http://<server>:8000/ opens the chat page, which then calls /ask on the same server
 @app.get("/", include_in_schema=False)
 def frontend():
     return FileResponse(Path(__file__).with_name("index.html"))
 
 
+# "/spyrja_px_api" is the path given in the hackathon spec; "/ask" is the same endpoint.
 @app.post("/ask")
 @app.post("/spyrja_px_api")
 def ask_px_api(req: QuestionRequest):
