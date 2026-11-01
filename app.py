@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from pathlib import Path
 from pydantic import BaseModel, Field, AliasChoices
 import requests
 import datetime
@@ -151,6 +153,21 @@ WORD_WEIGHTS = {
     ], LOW),
 }
 USE_RARITY = False  # True: weights computed by rarity() instead of WORD_WEIGHTS
+
+# Icelandic is not supported yet: small Icelandic words (accents stripped by clean_text) that English never uses.
+# Letters alone are not enough: English questions can have Icelandic place names ("Reykjavík", "Ísafjörður").
+ICELANDIC_WORDS = set("""hversu hve hvad hvada hver hvert hverjir hverjar hvenaer hvar margir margar morg mikid
+arid ari voru var og af fra til sem fyrir eftir hja vid ekki eda hlutfall fjoldi samtals breyttist""".split())
+ICELANDIC_ANSWER = ("Því miður get ég ekki enn svarað spurningum á íslensku. Vinsamlegast spyrðu á ensku.\n"
+                    "Sorry, Icelandic questions are not supported yet. Please ask in English, "
+                    "e.g. \"How many hospital beds were there in 2020?\"")
+
+
+def is_icelandic(question):
+    """2 Icelandic words, or 1 Icelandic word and an Icelandic letter (þ, ð, æ, ö, á, í...)."""
+    found = len(set(re.findall(r"[a-z]+", clean_text(question))) & ICELANDIC_WORDS)
+    return found >= 2 or (found >= 1 and bool(re.search(r"[þðæöáéíóúýÞÐÆÖÁÉÍÓÚÝ]", question)))
+
 
 # Relative years: phrase -> number of years before the current year ("last year" = 2025 in 2026)
 RELATIVE_YEARS = {
@@ -573,6 +590,12 @@ class QuestionRequest(BaseModel):
 
 
 # "/spyrja_px_api" is the path given in the hackathon spec; "/ask" is the same endpoint.
+# The web interface: http://<server>:8000/ opens the chat page, which then calls /ask on the same server
+@app.get("/", include_in_schema=False)
+def frontend():
+    return FileResponse(Path(__file__).with_name("index.html"))
+
+
 @app.post("/ask")
 @app.post("/spyrja_px_api")
 def ask_px_api(req: QuestionRequest):
@@ -661,10 +684,15 @@ def table_values(question, table, years):
 
 
 def _answer_question(question):
+    if is_icelandic(question):  # no table, PX-API or LLM call: the keywords and labels are English only
+        return {"answer": ICELANDIC_ANSWER, "language": "is"}
+
     # ---- Step 1: find the tables (one question can ask about several topics) ----
     tables, candidates = find_tables(question)
     if not tables:
-        return {"answer": "I can't answer that question because I don't have the information needed.",
+        topics = "\n".join(f"- {t['title']}" for t in TABLES.values())
+        return {"answer": "I can't answer that question because I don't have the information needed.\n"
+                          f"I can answer questions about:\n{topics}",
                 "candidates": candidates}
 
     # Steps 2 and 3 for each table; a table that gives no values is left out (a keyword can match by chance),
